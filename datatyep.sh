@@ -1,32 +1,35 @@
-# Function to map BigQuery data types to dbt tests
-def map_data_type_to_dbt_test(data_type):
-    if data_type == 'STRING':
-        return "is_string"
-    elif data_type == 'BYTES':
-        return "is_bytes"
-    elif data_type == 'INT64':
-        return "is_integer"
-    elif data_type == 'FLOAT64':
-        return "is_float"
-    elif data_type == 'NUMERIC':
-        return "is_numeric"
-    elif data_type == 'BIGNUMERIC':
-        return "is_bignumeric"
-    elif data_type == 'BOOL':
-        return "is_boolean"
-    elif data_type == 'TIMESTAMP':
-        return "is_timestamp"
-    elif data_type == 'DATE':
-        return "is_date"
-    elif data_type == 'TIME':
-        return "is_time"
-    elif data_type == 'DATETIME':
-        return "is_datetime"
-    elif data_type == 'GEOGRAPHY':
-        return "is_geography"
-    elif data_type == 'ARRAY':
-        return "is_array"
-    elif data_type == 'STRUCT':
-        return "is_struct"
-    else:
-        return None
+{% macro is_string(column_name) %}
+  {{ column_name }} IS NULL OR {{ column_name }} = '' OR SAFE.REGEXP_CONTAINS({{ column_name }}, r'^.*$')
+{% endmacro %}
+
+{% macro is_bytes(column_name) %}
+  {{ column_name }} IS NULL OR SAFE.REGEXP_CONTAINS(TO_BASE64({{ column_name }}), r'^[A-Za-z0-9+/=]*$')
+{% endmacro %}
+
+{% macro is_numeric(column_name) %}
+  {{ column_name }} IS NULL OR SAFE_CAST({{ column_name }} AS NUMERIC) IS NOT NULL
+{% endmacro %}
+
+{% macro is_bignumeric(column_name) %}
+  {{ column_name }} IS NULL OR SAFE_CAST({{ column_name }} AS BIGNUMERIC) IS NOT NULL
+{% endmacro %}
+
+{% macro is_time(column_name) %}
+  {{ column_name }} IS NULL OR SAFE_CAST({{ column_name }} AS TIME) IS NOT NULL
+{% endmacro %}
+
+{% macro is_datetime(column_name) %}
+  {{ column_name }} IS NULL OR SAFE_CAST({{ column_name }} AS DATETIME) IS NOT NULL
+{% endmacro %}
+
+{% macro is_geography(column_name) %}
+  {{ column_name }} IS NULL OR ST_GEOGFROMTEXT({{ column_name }}) IS NOT NULL
+{% endmacro %}
+
+{% macro is_array(column_name) %}
+  {{ column_name }} IS NULL OR ARRAY_LENGTH({{ column_name }}) IS NOT NULL
+{% endmacro %}
+
+{% macro is_struct(column_name) %}
+  {{ column_name }} IS NULL OR STRUCT_LENGTH({{ column_name }}) IS NOT NULL
+{% endmacro %}
