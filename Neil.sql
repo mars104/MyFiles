@@ -1,54 +1,73 @@
-from google.cloud import bigquery
-import yaml
+{% macro expression_is_true(model, expression, fail_calc, error_if, columns) %}
 
-# Set your project ID, dataset ID, and table name
-project_id = 'your_project_id'
-dataset_id = 'your_dataset_id'
-table_name = 'your_table_name'
+{% set table_1 = model.alias('table_1') %}
+{% set table_2 = model.alias('table_2') %}
 
-# Initialize the BigQuery client
-client = bigquery.Client(project=project_id)
+with
 
-# Define the SQL query to get the table schema
-sql = f"""
-SELECT
-  table_name,
-  column_name,
-  is_nullable,
-  data_type
-FROM
-  `{project_id}.{dataset_id}.INFORMATION_SCHEMA.COLUMNS`
-WHERE
-  table_name = '{table_name}';
-"""
+table_1_cte as (
+  select
+    'expected' as source,
+    {{ columns|join(', ') }}
+  from {{ table_1 }}
+),
 
-# Execute the query and get the results
-query_job = client.query(sql)
-results = query_job.result()
+table_2_cte as (
+  select
+    'actual' as source,
+    case when z > 1 then 1 else 2 end as a,
+    {{ columns|join(', ') }}
+  from {{ table_2 }}
+),
 
-# Initialize a dictionary to store the generated tests
-tests = {
-    "version": 2,
-    "models": [
-        {
-            "name": table_name,
-            "columns": []
-        }
-    ]
-}
+combined as (
+  select * from table_1_cte
+  union all
+  select * from table_2_cte
+),
 
-# Iterate through the columns and generate appropriate tests
-for row in results:
-    column_tests = []
-    if row.is_nullable == 'NO':
-        column_tests.append("not_null")
-    # Add more tests based on data_type, max length, and other constraints
+aggregated as (
+  select
+    max(source) as source,
+    {{ columns|join(', ') }},
+    count(*) as cnt
+  from combined
+  group by {{ columns|join(', ') }}
+  having count(*) = 1
+),
 
-    tests["models"][0]["columns"].append({
-        "name": row.column_name,
-        "tests": column_tests
-    })
+row_counts as (
+  select
+    count(*) as table_1_rows,
+    sum(case when source = 'expected' then 1 else 0 end) as table_2_rows,
+    count(*) as differences,
+    sum(case when cnt = 2 then 1 else 0 end) as matching_rows
+  from aggregated
+)
 
-# Write the tests to a YAML file in your dbt project
-with open(f"{table_name}_schema_tests.yml", "w") as outfile:
-    yaml.dump(tests, outfile)
+select
+  {{ fail_calc }} as failure_reason,
+  count(*) as failures
+from row_counts
+where not ({{ expression }}) or ({{ error_if }})
+group by {{ fail_calc }}
+
+{% endmacro %}
+
+And update the schema.yml file accordingly:
+version: 2
+
+models:
+  - name: table_1
+    database: db01
+    schema: ds01
+    tests:
+      - dbt_utils.expression_is_true:
+          expression: "table_1_rows > 0 AND table_2_rows > 0 AND differences = 0"
+          fail_calc: "differences"
+          error_if: "table_1_rows = 0 OR table_2_rows = 0"
+          columns: ["a", "b", "c", "d"]
+
+  - name: table_2
+    database: db01
+    schema: ds02
